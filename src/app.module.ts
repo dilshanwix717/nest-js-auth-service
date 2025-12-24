@@ -2,6 +2,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -16,9 +17,9 @@ import { AuthModule } from './auth/auth.module';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') || 'your_jwt_secret_change_me',
+        secret: config.get<string>('JWT_SECRET') ?? 'your_jwt_secret_change_me',
         signOptions: {
-          expiresIn: config.get<string>('JWT_EXPIRES_IN') || '1h',
+          expiresIn: config.get<StringValue>('JWT_EXPIRES_IN') ?? '1h',
         },
       }),
     }),

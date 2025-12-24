@@ -3,9 +3,9 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { AppService } from './app.service';
-import type { AuthLoginRequestDto } from '@/lib/dto/auth-login.dto';
-import type { AuthLoginResponseDto } from '@/lib/dto/auth-login-response.dto';
-import type { ValidateTokenResponse } from '@/lib/dto/validate-token.dto';
+import type { AuthLoginRequestDto } from './libs/dto/auth-login.dto';
+import type { AuthLoginResponseDto } from './libs/dto/auth-login-response.dto';
+import type { ValidateTokenResponse } from './libs/dto/validate-token.dto';
 
 @Controller()
 export class AppController {

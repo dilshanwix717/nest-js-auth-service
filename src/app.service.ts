@@ -2,11 +2,13 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from './prisma/prisma.service.ts';
-import type { AuthLoginRequestDto } from '@/lib/dto/auth-login.dto';
-import type { AuthLoginResponseDto } from '@/lib/dto/auth-login-response.dto';
-import type { ValidateTokenResponse } from '@/lib/dto/validate-token.dto';
-import type { JwtPayload } from '@/lib/auth/jwt-payload';
+import { PrismaService } from './prisma/prisma.service';
+import type { AuthLoginRequestDto } from './libs/dto/auth-login.dto.js';
+import type { AuthLoginResponseDto } from './libs/dto/auth-login-response.dto';
+import type { ValidateTokenResponse } from './libs/dto/validate-token.dto';
+import type { JwtPayload } from './libs/dto/jwt-payload.dto';
+import { AuthUser } from './common/interfaces/auth-user.interface';
+import { ValidateTokenUser } from './common/interfaces/validate-token-user.interface';
 
 @Injectable()
 export class AppService {
@@ -18,11 +20,11 @@ export class AppService {
   ) {}
 
   async login(credential: AuthLoginRequestDto): Promise<AuthLoginResponseDto> {
-    const { username, password } = credential;
+    const { email, password } = credential;
 
-    // Find user by username
-    const user = await this.prisma.user.findUnique({
-      where: { username },
+    // Find user by email - let Prisma infer the type, use satisfies for validation
+    const user = (await this.prisma.user.findUnique({
+      where: { email },
       select: {
         id: true,
         username: true,
@@ -30,17 +32,17 @@ export class AppService {
         email: true,
         roles: true,
       },
-    });
+    })) as AuthUser | null;
 
     if (!user) {
-      this.logger.warn(`Login attempt failed: user not found - ${username}`);
+      this.logger.warn(`Login attempt failed: user not found - ${email}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      this.logger.warn(`Login attempt failed: invalid password - ${username}`);
+      this.logger.warn(`Login attempt failed: invalid password - ${email}`);
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -52,7 +54,7 @@ export class AppService {
 
     const token = this.jwtService.sign(payload);
 
-    this.logger.log(`User logged in successfully: ${username}`);
+    this.logger.log(`User logged in successfully: ${email}`);
 
     return {
       token,
@@ -69,8 +71,8 @@ export class AppService {
     try {
       const decoded = this.jwtService.verify<JwtPayload>(token);
 
-      // Optional: Check if user still exists in database
-      const user = await this.prisma.user.findUnique({
+      // Check if user still exists in database
+      const user = (await this.prisma.user.findUnique({
         where: { id: decoded.userId },
         select: {
           id: true,
@@ -78,7 +80,7 @@ export class AppService {
           email: true,
           roles: true,
         },
-      });
+      })) as ValidateTokenUser | null;
 
       if (!user) {
         this.logger.warn(
@@ -98,7 +100,8 @@ export class AppService {
         },
       };
     } catch (err) {
-      this.logger.error('Token validation error', (err as Error).message);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      this.logger.error('Token validation error', errorMessage);
       return {
         valid: false,
         user: null,
