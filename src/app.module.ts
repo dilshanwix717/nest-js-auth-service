@@ -7,6 +7,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 @Module({
   imports: [
@@ -27,6 +28,12 @@ import { AuthModule } from './auth/auth.module';
     AuthModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: 'APP_INTERCEPTOR',
+      useClass: LoggingInterceptor,
+    },
+  ],
 })
 export class AppModule {}

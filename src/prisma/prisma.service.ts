@@ -6,6 +6,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
 @Injectable()
 export class PrismaService
@@ -15,19 +17,30 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
+    const databaseUrl = process.env.DATABASE_URL;
+
+    if (!databaseUrl) {
+      // Can't use `this.logger` before `super()` in derived constructor
+      console.error('DATABASE_URL environment variable is not defined');
+      throw new Error('Missing required environment variable: DATABASE_URL');
+    }
+
+    // Explicitly type the Pool to avoid unsafe `any` inference
+    // If your environment lacks `pg` types, adjust tsconfig or install `@types/pg`.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const pool: Pool = new Pool({
+      connectionString: databaseUrl,
+    });
+
     super({
+      adapter: new PrismaPg(pool),
       log: ['query', 'info', 'warn', 'error'],
     });
   }
 
   async onModuleInit() {
-    try {
-      await this.$connect();
-      this.logger.log('✅ Database connected successfully');
-    } catch (error) {
-      this.logger.error('❌ Database connection failed', error);
-      throw error;
-    }
+    await this.$connect();
+    this.logger.log('✅ Database connected successfully');
   }
 
   async onModuleDestroy() {

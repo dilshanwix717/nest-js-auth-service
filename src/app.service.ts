@@ -3,12 +3,17 @@ import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from './prisma/prisma.service';
+import { AuthService } from './auth/auth.service';
 import type { AuthLoginRequestDto } from './libs/dto/auth-login.dto.js';
 import type { AuthLoginResponseDto } from './libs/dto/auth-login-response.dto';
+import type { AuthSignUpRequestDto } from './libs/dto/auth-signup.dto';
+import type { AuthSignUpResponseDto } from './libs/dto/auth-signup-response.dto';
+
 import type { ValidateTokenResponse } from './libs/dto/validate-token.dto';
 import type { JwtPayload } from './libs/dto/jwt-payload.dto';
 import { AuthUser } from './common/interfaces/auth-user.interface';
 import { ValidateTokenUser } from './common/interfaces/validate-token-user.interface';
+//import { RpcException } from '@nestjs/microservices';
 
 @Injectable()
 export class AppService {
@@ -17,7 +22,74 @@ export class AppService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly authService: AuthService,
   ) {}
+
+  async signUp(dto: AuthSignUpRequestDto): Promise<AuthSignUpResponseDto> {
+    // 🔍 LOG FULL DTO
+    this.logger.log('SignUp DTO received:', JSON.stringify(dto));
+
+    const { username, email, password, roles } = dto;
+
+    // 🔍 LOG DESTRUCTURED VALUES
+    this.logger.log('Destructured values:', {
+      username,
+      email,
+      password,
+      roles,
+    });
+
+    // Validate required fields
+    if (!email || !username || !password) {
+      this.logger.error('Missing required fields:', {
+        email,
+        username,
+        password,
+      });
+      throw new Error('Missing required fields: email, username, password');
+    }
+
+    try {
+      // Check if user already exists by email
+      const existingUser = (await this.prisma.user.findFirst({
+        where: { email },
+      })) as AuthUser | null;
+
+      if (existingUser) {
+        this.logger.warn(`Email already in use: ${email}`);
+        throw new Error('Email already in use');
+      }
+
+      // 🔍 LOG BEFORE CREATING USER
+      this.logger.log('Creating user via AuthService...');
+
+      // Create user via AuthService
+      const user = await this.authService.createUser(
+        username,
+        email,
+        password,
+        roles,
+      );
+
+      // 🔍 LOG SUCCESS
+      this.logger.log('User created successfully:', user.id);
+
+      return {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        roles: user.roles,
+      };
+    } catch (error) {
+      // 🔍 LOG FULL ERROR
+      this.logger.error('SignUp error details:', {
+        //error: error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
+  }
 
   async login(credential: AuthLoginRequestDto): Promise<AuthLoginResponseDto> {
     const { email, password } = credential;

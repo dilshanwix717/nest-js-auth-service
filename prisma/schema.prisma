@@ -1,20 +1,232 @@
-// prisma/schema.prisma
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
 generator client {
-    provider = "prisma-client-js"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+  //binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-    provider = "postgresql"
+  provider = "postgresql"
 }
 
+// ============================================================================
+// User Model - Core authentication entity
+// ============================================================================
 model User {
-    id        String   @id @default(uuid())
-    username  String   @unique
-    email     String   @unique
-    password  String
-    roles     String[] @default(["user"])
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+  id       String   @id @default(uuid())
+  username String   @unique @db.VarChar(50)
+  email    String   @unique @db.VarChar(255)
+  password String   @db.VarChar(255) // bcrypt hashed password
+  roles    String[] @default(["user"]) // Array of role names
 
-    @@map("users")
+  // Account status
+  isActive        Boolean @default(true)
+  isEmailVerified Boolean @default(false)
+
+  // Timestamps
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  lastLoginAt DateTime? @map("last_login_at")
+
+  // Relations
+  refreshTokens      RefreshToken[]
+  sessions           Session[]
+  emailVerifications EmailVerification[]
+  passwordResets     PasswordReset[]
+  auditLogs          AuditLog[]
+
+  @@index([email])
+  @@index([username])
+  @@index([isActive])
+  @@map("users")
+}
+
+// ============================================================================
+// RefreshToken Model - For JWT refresh token rotation
+// ============================================================================
+model RefreshToken {
+  id     String @id @default(uuid())
+  token  String @unique @db.VarChar(500)
+  userId String @map("user_id")
+
+  // Token metadata
+  expiresAt DateTime @map("expires_at")
+  isRevoked Boolean  @default(false) @map("is_revoked")
+
+  // Device/client tracking
+  userAgent String? @map("user_agent") @db.VarChar(500)
+  ipAddress String? @map("ip_address") @db.VarChar(45) // IPv6 compatible
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================================================
+// Session Model - Active user sessions tracking
+// ============================================================================
+model Session {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+
+  // Session metadata
+  token     String   @unique @db.VarChar(500)
+  expiresAt DateTime @map("expires_at")
+
+  // Device/client information
+  userAgent String? @map("user_agent") @db.VarChar(500)
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  deviceId  String? @map("device_id") @db.VarChar(255)
+
+  // Timestamps
+  createdAt      DateTime @default(now()) @map("created_at")
+  lastActivityAt DateTime @default(now()) @map("last_activity_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================================
+// EmailVerification Model - Email verification tokens
+// ============================================================================
+model EmailVerification {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  token  String @unique @db.VarChar(255)
+
+  // Token expiration
+  expiresAt DateTime @map("expires_at")
+
+  // Verification status
+  isUsed     Boolean   @default(false) @map("is_used")
+  verifiedAt DateTime? @map("verified_at")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("email_verifications")
+}
+
+// ============================================================================
+// PasswordReset Model - Password reset tokens
+// ============================================================================
+model PasswordReset {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  token  String @unique @db.VarChar(255)
+
+  // Token expiration
+  expiresAt DateTime @map("expires_at")
+
+  // Reset status
+  isUsed Boolean   @default(false) @map("is_used")
+  usedAt DateTime? @map("used_at")
+
+  // Security tracking
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+// ============================================================================
+// AuditLog Model - Security and compliance logging
+// ============================================================================
+model AuditLog {
+  id     String  @id @default(uuid())
+  userId String? @map("user_id") // Nullable for failed login attempts
+
+  // Event details
+  action   String  @db.VarChar(100) // e.g., "LOGIN", "LOGOUT", "PASSWORD_CHANGE"
+  resource String? @db.VarChar(100) // Resource affected
+  status   String  @db.VarChar(50) // "SUCCESS", "FAILURE"
+
+  // Request metadata
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  // Additional context
+  metadata     Json?   @db.JsonB // Flexible JSON for additional data
+  errorMessage String? @map("error_message") @db.Text
+
+  // Timestamp
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([status])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// Role Model - Optional: For advanced RBAC (Role-Based Access Control)
+// ============================================================================
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(255)
+  permissions String[] @default([]) // Array of permission strings
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([name])
+  @@map("roles")
+}
+
+// ============================================================================
+// Permission Model - Optional: For granular permission management
+// ============================================================================
+model Permission {
+  id          String  @id @default(uuid())
+  name        String  @unique @db.VarChar(100)
+  resource    String  @db.VarChar(100) // e.g., "user", "product"
+  action      String  @db.VarChar(50) // e.g., "create", "read", "update", "delete"
+  description String? @db.VarChar(255)
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([resource, action])
+  @@index([name])
+  @@map("permissions")
 }

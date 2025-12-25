@@ -2,7 +2,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-import type { User } from '@prisma/client';
+import { UserData } from 'src/common/interfaces/auth-user.interface';
 
 @Injectable()
 export class AuthService {
@@ -16,28 +16,28 @@ export class AuthService {
     email: string,
     password: string,
     roles: string[] = ['user'],
-  ): Promise<User> {
+  ): Promise<UserData> {
     const hashedPassword = await bcrypt.hash(password, this.SALT_ROUNDS);
 
-    return this.prisma.user.create({
+    return (await this.prisma.user.create({
       data: {
         username,
         email,
         password: hashedPassword,
         roles,
       },
-    });
+    })) as UserData;
   }
 
-  async findUserByUsername(username: string): Promise<User | null> {
+  findUserByUsername(username: string): Promise<UserData | null> {
     return this.prisma.user.findUnique({
       where: { username },
-    });
+    }) as Promise<UserData | null>;
   }
 
-  async findUserById(id: string): Promise<User | null> {
+  findUserById(id: string): Promise<UserData | null> {
     return this.prisma.user.findUnique({
       where: { id },
-    });
+    }) as Promise<UserData | null>;
   }
 }
