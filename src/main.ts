@@ -1,66 +1,69 @@
-// FILE: apps/auth-service/src/main.ts
+// apps/auth-service/src/main.ts
+// ================================
 
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
-
+import { QUEUES } from 'libs/common/src/constants/rabbitmq.constants';
+import { RpcExceptionFilter } from './common/filters/rpc-exception.filter';
 /**
- * Bootstrap function - Initializes and starts the microservice
+ * Bootstrap function - Initializes and starts the Auth microservice with RabbitMQ
  */
 async function bootstrap() {
-  /**
-   * Create NestJS microservice instance
-   *
-   * createMicroservice vs createNestApplication:
-   * - createMicroservice: For inter-service RPC communication (TCP, RabbitMQ, etc.)
-   * - createNestApplication: For HTTP REST APIs
-   */
-  const app = await NestFactory.createMicroservice<MicroserviceOptions>(
-    AppModule,
-    {
-      /**
-       * Transport.TCP - Use TCP protocol for inter-service communication
-       *
-       * Other transports available:
-       * - RabbitMQ: Message broker (high-performance)
-       * - MQTT: IoT messaging protocol
-       * - gRPC: High-performance RPC framework
-       * - Kafka: Stream processing
-       */
-      transport: Transport.TCP,
-      options: {
-        // Read host/port from environment or use defaults
-        host: process.env.AUTH_SERVICE_HOST || '127.0.0.1',
-        port: parseInt(process.env.AUTH_SERVICE_PORT || '8877', 10),
+  const logger = new Logger('AuthServiceBootstrap');
+
+  try {
+    // RabbitMQ connection URL from environment or default
+    const rabbitMQUrl = process.env.RABBITMQ_URL || 'amqp://localhost:5672';
+
+    logger.log(`Connecting to RabbitMQ at: ${rabbitMQUrl}`);
+
+    const app = await NestFactory.createMicroservice<MicroserviceOptions>(
+      AppModule,
+      {
+        transport: Transport.RMQ,
+        options: {
+          urls: [rabbitMQUrl],
+          queue: QUEUES.AUTH_QUEUE,
+          queueOptions: {
+            durable: true, // Queue survives broker restart
+          },
+          // Prefetch count - number of messages to process concurrently
+          prefetchCount: 1,
+          // Disable automatic acknowledgment for better reliability
+          noAck: false,
+          // Connection heartbeat to detect dropped connections
+          heartbeat: 60,
+        },
       },
-    },
-  );
+    );
 
-  /**
-   * useGlobalPipes - Attach global validation and transformation middleware
-   *
-   * ValidationPipe provides:
-   * - whitelist: true - Remove properties not defined in DTO
-   * - forbidNonWhitelisted: false - Don't throw on extra properties (just remove them)
-   * - transform: true - Auto-convert primitive types (string '123' -> number 123)
-   */
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false,
-      transform: true,
-    }),
-  );
+    // Global validation pipe for DTO validation
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: false,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
 
-  // Start listening for TCP connections
-  await app.listen();
-  Logger.log(`🚀 Auth Service is running on TCP port 8877`);
+    // Global exception filter for RPC errors
+    app.useGlobalFilters(new RpcExceptionFilter());
+
+    // Start listening for RabbitMQ messages
+    await app.listen();
+
+    logger.log(
+      `🚀 Auth Service is running with RabbitMQ queue: ${QUEUES.AUTH_QUEUE}`,
+    );
+  } catch (error) {
+    logger.error('Fatal error during bootstrap:', error);
+    process.exit(1);
+  }
 }
 
-// Execute bootstrap function to start the application
-bootstrap().catch((err) => {
-  console.error('Fatal error during bootstrap:', err);
-  // Ensure non-zero exit code so supervisors detect failure
-  process.exit(1);
-});
+bootstrap();

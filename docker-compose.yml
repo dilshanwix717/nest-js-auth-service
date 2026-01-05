@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: nestjs-rabbitmq
+    restart: unless-stopped
+    ports:
+      - '5672:5672'   # AMQP port
+      - '15672:15672' # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - microservices
+
+  # PostgreSQL Database for Auth Service
+  postgres-auth:
+    image: postgres:15-alpine
+    container_name: nestjs-postgres-auth
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_password
+      POSTGRES_DB: auth_db
+    volumes:
+      - postgres_auth_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U auth_user -d auth_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+  # PostgreSQL Database for User Service (optional)
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: nestjs-postgres-user
+    restart: unless-stopped
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: user_user
+      POSTGRES_PASSWORD: user_password
+      POSTGRES_DB: user_db
+    volumes:
+      - postgres_user_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U user_user -d user_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices
+
+volumes:
+  rabbitmq_data:
+    driver: local
+  postgres_auth_data:
+    driver: local
+  postgres_user_data:
+    driver: local
+
+networks:
+  microservices:
+    driver: bridge

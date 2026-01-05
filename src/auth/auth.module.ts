@@ -8,29 +8,11 @@ import { JwtModule } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
 @Module({
   imports: [
-    /**
-     * ConfigModule.forRoot - Load environment variables
-     *
-     * Options:
-     * - isGlobal: true - Make config available across all modules
-     * - envFilePath: '.env' - Load from .env file
-     */
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
     }),
 
-    /**
-     * JwtModule.registerAsync - Configure JWT with dynamic values from ConfigService
-     *
-     * registerAsync allows dependency injection (ConfigService) unlike register()
-     *
-     * Configuration:
-     * - secret: JWT signing key (from JWT_SECRET env var)
-     * - signOptions.expiresIn: Token expiration time (from JWT_EXPIRES_IN env var)
-     *
-     * This config is injected into AuthService for token generation
-     */
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

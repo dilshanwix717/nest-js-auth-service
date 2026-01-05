@@ -1,97 +1,123 @@
-// FILE: apps/auth-service/src/auth/auth.controller.ts
+// apps/auth-service/src/auth/auth.controller.ts
+// ================================================
 
 import { Controller, Logger } from '@nestjs/common';
-import { MessagePattern, RpcException } from '@nestjs/microservices';
+import { MessagePattern, Payload, RpcException } from '@nestjs/microservices';
 import { AuthService } from './auth.service';
-import { RpcPayload } from '../common/decorators/rpc-payload.decorator';
 import type { AuthLoginRequestDto } from '../libs/dto/auth-login.dto';
 import type { AuthLoginResponseDto } from '../libs/dto/auth-login-response.dto';
-import type { ValidateTokenResponse } from '../libs/dto/validate-token.dto';
 import type { AuthSignUpRequestDto } from '../libs/dto/auth-signup.dto';
 import type { AuthSignUpResponseDto } from '../libs/dto/auth-signup-response.dto';
+import { MESSAGE_PATTERNS } from 'libs/common/src/constants/rabbitmq.constants';
+import { ValidateTokenRequestDto } from 'src/libs/dto/validate-token-request.dto';
+import { ValidateTokenResponseDto } from 'src/libs/dto/validate-token-response.dto';
 
 /**
- * @Controller() - Marks as NestJS controller for message handling
+ * Auth Controller - Handles RabbitMQ message patterns for authentication
  */
 @Controller()
 export class AuthController {
-  // Logger for tracking request/response flow
   private readonly logger = new Logger(AuthController.name);
 
-  /**
-   * Constructor - Dependency Injection
-   * @param authService - Injected AuthService for business logic
-   */
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * @MessagePattern('auth-signup') - Listens for signup RPC messages
-   * Handles user registration requests
+   * Handles user signup requests
+   * Pattern: auth.signup
    */
-  @MessagePattern('auth-signup')
+  @MessagePattern(MESSAGE_PATTERNS.AUTH_SIGNUP)
   async signUp(
-    @RpcPayload() dto: AuthSignUpRequestDto,
+    @Payload() dto: AuthSignUpRequestDto,
   ): Promise<AuthSignUpResponseDto> {
-    // Log incoming request with user-identifying details
-    this.logger.log('Received auth-signup message:', {
+    this.logger.log(`Received ${MESSAGE_PATTERNS.AUTH_SIGNUP} message`, {
       username: dto.username,
       email: dto.email,
-      roles: dto.roles,
     });
 
     try {
-      // Delegate to service for actual signup logic
       const result = await this.authService.signUp(dto);
-      this.logger.log('Signup successful:', result);
+
+      this.logger.log(`Signup successful for user: ${result.id}`);
+
       return result;
     } catch (error) {
-      // Log and re-throw as RpcException for client-friendly error response
-      this.logger.error('Signup error:', error);
+      this.logger.error('Signup error:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        dto: { username: dto.username, email: dto.email },
+      });
+
       throw new RpcException({
-        status: 'error',
+        statusCode:
+          error instanceof Error && (error as any).statusCode
+            ? (error as any).statusCode
+            : 400,
         message: error instanceof Error ? error.message : 'Signup failed',
+        error: 'SignupError',
       });
     }
   }
 
   /**
-   * @MessagePattern('auth-login') - Listens for login RPC messages
-   * Handles user authentication and JWT token generation
+   * Handles user login requests
+   * Pattern: auth.login
    */
-  @MessagePattern('auth-login')
+  @MessagePattern(MESSAGE_PATTERNS.AUTH_LOGIN)
   async login(
-    @RpcPayload() credential: AuthLoginRequestDto,
+    @Payload() credential: AuthLoginRequestDto,
   ): Promise<AuthLoginResponseDto> {
-    this.logger.log('Received auth-login message:', credential.email);
+    this.logger.log(`Received ${MESSAGE_PATTERNS.AUTH_LOGIN} message`, {
+      email: credential.email,
+    });
 
     try {
-      // Delegate to service for authentication and token generation
-      return await this.authService.login(credential);
+      const result = await this.authService.login(credential);
+
+      this.logger.log(`Login successful for user: ${credential.email}`);
+
+      return result;
     } catch (error) {
-      this.logger.error('Login error:', error);
+      this.logger.error('Login error:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        email: credential.email,
+      });
+
       throw new RpcException({
-        status: 'error',
+        statusCode:
+          error instanceof Error && (error as any).statusCode
+            ? (error as any).statusCode
+            : 401,
         message: error instanceof Error ? error.message : 'Login failed',
+        error: 'LoginError',
       });
     }
   }
 
   /**
-   * @MessagePattern('validate-token') - Listens for token validation RPC messages
-   * Handles JWT token verification and user validation
+   * Handles token validation requests
+   * Pattern: auth.validate-token
    */
-  @MessagePattern('validate-token')
+  @MessagePattern(MESSAGE_PATTERNS.AUTH_VALIDATE_TOKEN)
   async validateToken(
-    @RpcPayload() token: string,
-  ): Promise<ValidateTokenResponse> {
+    @Payload() dto: ValidateTokenRequestDto,
+  ): Promise<ValidateTokenResponseDto> {
+    this.logger.log(`Received ${MESSAGE_PATTERNS.AUTH_VALIDATE_TOKEN} message`);
+
     try {
-      // Delegate to service for token verification
-      return await this.authService.validateToken(token);
+      const result = await this.authService.validateToken(dto.token);
+
+      this.logger.log(`Token validation result: ${result.valid}`);
+
+      return result;
     } catch (error) {
-      this.logger.error('Token validation error:', error);
+      this.logger.error('Token validation error:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+
       throw new RpcException({
-        status: 'error',
-        message: error instanceof Error ? error.message : 'Validation failed',
+        statusCode: 401,
+        message:
+          error instanceof Error ? error.message : 'Token validation failed',
+        error: 'TokenValidationError',
       });
     }
   }
